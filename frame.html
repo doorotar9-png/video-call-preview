@@ -1,0 +1,59 @@
+<!doctype html><html lang="ru" class="controls_theme-default"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Окно звонка</title><link rel="stylesheet" href="/video-call-preview/assets/styles.css"></head><body class="controls_theme-default__darkv2">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<script>
+  window.wsConfig = window.wsConfig || { compatible: false, logLevel: 'error' };
+</script>
+
+
+<script>
+  document.documentElement.classList.toggle('ws-is-hover', !['phone', 'tablet'].includes(window.frameElement?.dataset.device));
+</script>
+
+
+<div id="vc-root-beeps"></div>
+
+
+<script>
+  window.BroadcastChannel = class {
+    constructor(name) {
+      this.name = name;
+      this.onmessage = null;
+      this.onmessageerror = null;
+    }
+    postMessage() {}
+    close() {}
+    addEventListener() {}
+    removeEventListener() {}
+    dispatchEvent() {
+      return true;
+    }
+  };
+</script>
+<div id="prototype-root"></div><script src="/video-call-preview/assets/player.js"></script></body></html>
