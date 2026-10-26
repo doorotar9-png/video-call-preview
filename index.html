@@ -50,6 +50,10 @@ body {
 .sh-stage { min-width: 0; min-height: 0; }
 .sh-frame { position: relative; overflow: hidden; box-shadow: 0 2px 12px rgba(15, 23, 42, .18); background: #202327; }
 .sh-frame iframe { position: absolute; left: 0; top: 0; border: 0; transform-origin: 0 0; }
+.sh-frame iframe.sh-preparing-frame { opacity: 0; pointer-events: none; }
+.sh-frame[aria-busy='true'] > #window { pointer-events: none; }
+.sh-transition-error { position: absolute; z-index: 1; left: 12px; right: 12px; bottom: 12px; padding: 10px; color: var(--ink); background: var(--panel); }
+.sh-transition-error button { color: var(--now); font: inherit; cursor: pointer; }
 
 /* панель */
 .sh-panel { position: static; display: flex; flex-direction: column; width: var(--panel-width); height: 100%; max-width: none; max-height: none; min-height: 0; margin: 0; padding: 0; color: var(--ink); font: inherit; background: var(--panel); border: 0; border-left: 1px solid var(--line); }
@@ -107,7 +111,7 @@ body {
 // Оболочка прототипа: помощники для shell.js.
 // Размер окна продукта выбирается независимо от постоянно видимой панели.
 const рамка = document.getElementById('frame');
-const окно = document.getElementById('window');
+let окно = document.getElementById('window');
 const панель = document.getElementById('panel');
 const место = document.getElementById('stage');
 const РАЗМЕРЫ = [
@@ -132,13 +136,15 @@ function вписать() {
   const k = Math.max(0, Math.min(1, доступнаяШирина / размер.ширина, место.clientHeight / размер.высота));
   рамка.style.width = размер.ширина * k + 'px';
   рамка.style.height = размер.высота * k + 'px';
-  окно.style.width = размер.ширина + 'px';
-  окно.style.height = размер.высота + 'px';
-  окно.style.transform = 'scale(' + k + ')';
-  if (окно.dataset.device !== размер.id) {
-    окно.dataset.device = размер.id;
-    // Same-origin preview changes capabilities in place, preserving the call.
-    окно.contentWindow?.dispatchEvent(new Event('prototype-device-change'));
+  for (const кадр of рамка.querySelectorAll('iframe')) {
+    кадр.style.width = размер.ширина + 'px';
+    кадр.style.height = размер.высота + 'px';
+    кадр.style.transform = 'scale(' + k + ')';
+    if (кадр.dataset.device !== размер.id) {
+      кадр.dataset.device = размер.id;
+      // Same-origin preview changes capabilities in place, preserving the call.
+      кадр.contentWindow?.dispatchEvent(new Event('prototype-device-change'));
+    }
   }
 }
 
@@ -290,6 +296,80 @@ function фильтр(заголовок, имя, пункты, выбран, в
   блок.append(список);
   return блок;
 }
+
+// Keep the displayed document until its replacement has rendered the target.
+let подготовка = null;
+let таймерПодготовки = 0;
+let ошибкаПерехода = null;
+
+function отменитьПодготовку() {
+  clearTimeout(таймерПодготовки);
+  подготовка?.remove();
+  подготовка = null;
+  ошибкаПерехода?.remove();
+  ошибкаПерехода = null;
+  рамка.removeAttribute('aria-busy');
+  окно.inert = false;
+}
+
+function показатьПодготовленное(следующее) {
+  if (подготовка !== следующее) return;
+  clearTimeout(таймерПодготовки);
+  const прежнее = окно;
+  прежнее.removeAttribute('id');
+  следующее.id = 'window';
+  следующее.classList.remove('sh-preparing-frame');
+  следующее.removeAttribute('aria-hidden');
+  следующее.removeAttribute('tabindex');
+  следующее.inert = false;
+  окно = следующее;
+  подготовка = null;
+  прежнее.remove();
+  рамка.removeAttribute('aria-busy');
+}
+
+function подготовитьОкно(адрес, html = false) {
+  отменитьПодготовку();
+  // Initial loading keeps Storybook's own loader; there is no previous view yet.
+  if (!окно.getAttribute('src') && !окно.getAttribute('srcdoc')) {
+    if (html) окно.srcdoc = адрес;
+    else окно.src = адрес;
+    return;
+  }
+  const следующее = document.createElement('iframe');
+  следующее.id = 'window-next';
+  следующее.title = окно.title || 'Окно звонка';
+  следующее.setAttribute('allow', окно.getAttribute('allow') || 'fullscreen');
+  следующее.className = 'sh-preparing-frame';
+  следующее.setAttribute('aria-hidden', 'true');
+  следующее.setAttribute('tabindex', '-1');
+  следующее.inert = true;
+  подготовка = следующее;
+  рамка.append(следующее);
+  вписать(); // Device profile and native viewport must exist before loading.
+  рамка.setAttribute('aria-busy', 'true');
+  окно.inert = true;
+  таймерПодготовки = setTimeout(() => {
+    if (подготовка !== следующее) return;
+    отменитьПодготовку();
+    ошибкаПерехода = эл('div', 'sh-transition-error', 'Не удалось открыть выбранное состояние. ');
+    ошибкаПерехода.setAttribute('role', 'status');
+    const повтор = эл('button', '', 'Повторить');
+    повтор.type = 'button';
+    повтор.onclick = () => подготовитьОкно(адрес, html);
+    ошибкаПерехода.append(повтор);
+    рамка.append(ошибкаПерехода);
+  }, 30000);
+  if (html) {
+    следующее.onload = () => показатьПодготовленное(следующее);
+    следующее.srcdoc = адрес;
+  } else следующее.src = адрес;
+}
+
+window.addEventListener('message', (event) => {
+  if (event.origin !== location.origin || !подготовка || event.source !== подготовка.contentWindow) return;
+  if (event.data?.type === 'prototype-frame-ready') показатьПодготовленное(подготовка);
+});
 
 // Оболочка прототипа: окно звонка и общая панель. Шаблон — shell.html.
 //
@@ -486,13 +566,12 @@ function запомнить() {
   );
 }
 
-/** Открыть вариант с хода: окно перезагружается и доматывает до него само. */
+/** Подготовить вариант с хода, сохраняя прежний кадр до готовности нового. */
 function открыть(в, ход) {
   Object.assign(выбор, { путь: ПУТИ.get(в.ключ), вариант: в.ключ, ход, ждём: true });
   const заполнение = ЗАПОЛНЕНИЕ[выбор.заполнение][1];
-  окно.removeAttribute('srcdoc');
   // параметр без кодирования: плеер читает `variant:x;step:n;fill:f` как есть
-  окно.src = в.окно + '&args=variant:' + в.id + ';step:' + ход + (заполнение ? ';fill:' + заполнение : '');
+  подготовитьОкно(в.окно + '&args=variant:' + в.id + ';step:' + ход + (заполнение ? ';fill:' + заполнение : ''));
   запомнить();
   нарисовать();
 }
@@ -500,11 +579,10 @@ function открыть(в, ход) {
 /** Лист черновика: сценария ещё нет, окно пустое с подписью. */
 function открытьЧерновик(путь) {
   Object.assign(выбор, { путь, вариант: null, ход: 0, ждём: false });
-  окно.removeAttribute('src');
-  окно.srcdoc =
+  подготовитьОкно(
     '<body style="margin:0;height:100vh;display:grid;place-items:center;background:#202327;' +
     'color:#8e98ad;font:28px/1.4 Inter,system-ui,sans-serif">' +
-    'Этот сценарий ещё не собран: окно появится, когда натянем его.</body>';
+    'Этот сценарий ещё не собран: окно появится, когда натянем его.</body>', true);
   запомнить();
   нарисовать();
 }
@@ -518,6 +596,10 @@ function выбрать(путь) {
 
 /** Ход и ветка, где стоит окно: плеер пишет их в свой адрес. */
 function следить() {
+  if (подготовка || ошибкаПерехода) {
+    setTimeout(следить, 300);
+    return;
+  }
   try {
     const адрес = new URLSearchParams(окно.contentWindow.location.search);
     const args = адрес.get('args') || '';
