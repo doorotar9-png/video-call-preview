@@ -27,6 +27,29 @@
 
 
 
+<script id="prototype-focus-priority">
+  (() => {
+    const panelHasFocus = () => {
+      try {
+        if (!window.frameElement) return false;
+        const parentDocument = window.parent.document;
+        return !!parentDocument.getElementById('panel')?.contains(parentDocument.activeElement);
+      } catch (_) {
+        return false;
+      }
+    };
+    const elementFocus = HTMLElement.prototype.focus;
+    HTMLElement.prototype.focus = function (...args) {
+      if (!panelHasFocus()) return elementFocus.apply(this, args);
+    };
+    const windowFocus = window.focus;
+    window.focus = function (...args) {
+      if (!panelHasFocus()) return windowFocus.apply(this, args);
+    };
+  })();
+</script>
+
+
 <script>
   window.wsConfig = window.wsConfig || { compatible: false, logLevel: 'error' };
 </script>

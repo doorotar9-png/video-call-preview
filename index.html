@@ -597,7 +597,8 @@ function выбрать(путь) {
 
 /** Ход и ветка, где стоит окно: плеер пишет их в свой адрес. */
 function следить() {
-  if (подготовка || ошибкаПерехода) {
+  // Panel choices take priority; native menu selection must finish first.
+  if (подготовка || ошибкаПерехода || панель.querySelector('select:open')) {
     setTimeout(следить, 300);
     return;
   }
@@ -612,7 +613,14 @@ function следить() {
       if (ход !== выбор.ход) {
         выбор.ход = ход;
         запомнить();
-        нарисовать();
+        // Keep the native scenario select attached while its popup is open.
+        const в = ВАРИАНТЫ.get(к);
+        if (в?.шаги) {
+          const шаг = шагОкна(в, ход);
+          панель.querySelectorAll('input[name="step"]').forEach((радио) => {
+            радио.checked = Number(радио.value) === шаг;
+          });
+        }
       }
     } else if (выбор.вариант && !выбор.ждём && ВАРИАНТЫ.has(к)) {
       // Окно ушло в соседнюю ветку моим нажатием в нём: панель встаёт на неё,
